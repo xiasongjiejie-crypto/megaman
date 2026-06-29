@@ -1,0 +1,2 @@
+rootProject.name = 'megaman'
+include 'core', 'lwjgl3', 'teavm'

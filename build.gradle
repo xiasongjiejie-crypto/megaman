@@ -1,0 +1,86 @@
+allprojects {
+    repositories {
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+    ext {
+        gdxVersion = '1.13.1'
+        lwjglVersion = '3.3.3'
+        teavmBackend = '1.2.0'
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+/* ---------------- core：平台无关游戏逻辑 ---------------- */
+project(':core') {
+    apply plugin: 'java-library'
+    dependencies {
+        api "com.badlogicgames.gdx:gdx:$gdxVersion"
+    }
+    sourceSets {
+        main { resources { srcDirs += rootProject.file('assets') } }
+    }
+}
+
+/* ---------------- lwjgl3：桌面端 ---------------- */
+project(':lwjgl3') {
+    apply plugin: 'application'
+
+    dependencies {
+        implementation project(':core')
+        implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+        runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+        ['natives-windows', 'natives-windows-arm64',
+         'natives-linux', 'natives-linux-arm64',
+         'natives-macos', 'natives-macos-arm64'].each { nat ->
+            ['lwjgl', 'lwjgl-glfw', 'lwjgl-jemalloc', 'lwjgl-openal', 'lwjgl-opengl', 'lwjgl-stb'].each { mod ->
+                runtimeOnly "org.lwjgl:$mod:$lwjglVersion:$nat"
+            }
+        }
+    }
+
+    application {
+        mainClass = 'com.megaman.lwjgl3.DesktopLauncher'
+    }
+
+    def isMac = System.getProperty('os.name').toLowerCase().contains('mac')
+    tasks.named('run') {
+        workingDir = rootProject.file('assets')
+        setIgnoreExitValue(true)
+        if (isMac) jvmArgs += ['-XstartOnFirstThread']
+        if (project.hasProperty('autoexit')) systemProperty 'game.autoexit', project.property('autoexit')
+    }
+
+    tasks.register('fatJar', Jar) {
+        archiveBaseName = 'megaman'
+        archiveClassifier = 'all'
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        manifest { attributes 'Main-Class': application.mainClass.get() }
+        from sourceSets.main.output
+        dependsOn configurations.runtimeClasspath
+        from { configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }.collect { zipTree(it) } }
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+    }
+}
+
+/* ---------------- teavm：网页端（HTML5/WebGL） ---------------- */
+project(':teavm') {
+    dependencies {
+        implementation project(':core')
+        implementation "com.github.xpenatan.gdx-teavm:backend-teavm:$teavmBackend"
+    }
+
+    // 编译网页：./gradlew :teavm:buildWeb  ->  产物在 teavm/build/dist
+    tasks.register('buildWeb', JavaExec) {
+        dependsOn 'classes'
+        mainClass = 'com.megaman.teavm.TeaVMBuilder'
+        classpath = sourceSets.main.runtimeClasspath
+    }
+}
