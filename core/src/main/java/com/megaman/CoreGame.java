@@ -425,23 +425,34 @@ class Enemy extends Entity {
 
 /* ===================== Boss（多招式状态机） ===================== */
 class Boss extends Entity {
-    static final int IDLE = 0, APPROACH = 1, FAN = 2, VOLLEY = 3, DASH = 4, SLAM = 5;
-    private static final int[] SEQ = {APPROACH, FAN, VOLLEY, DASH, SLAM};
+    static final int IDLE = 0, APPROACH = 1, FAN = 2, VOLLEY = 3, DASH = 4, SLAM = 5,
+            GFLIP = 6, WELL = 7, PYRAMID = 8;
+    private static final int[] NSEQ = {APPROACH, FAN, VOLLEY, DASH, SLAM};
+    // 重力蚂蚁(Gravity Antonion)招式序列：重力反转/引力井/金字塔环形弹/冲撞/扇形/下砸/连射
+    private static final int[] GSEQ = {GFLIP, WELL, PYRAMID, DASH, FAN, SLAM, VOLLEY};
 
     int hp, maxHp;
     float groundTop;
     boolean onGround;
+
+    final boolean gravityBoss;
+    private final int[] seq;
 
     private int state = IDLE, seqI = 0, shots = 0;
     private float timer = 0.8f, subT = 0f;
     private int dashDir = -1;
     private boolean didJump = false, waveDone = false;
     boolean slamLanded = false;
+    boolean flipStarted = false;
 
-    Boss(float x, float groundTop, int hp) {
+    Boss(float x, float groundTop, int hp) { this(x, groundTop, hp, false); }
+
+    Boss(float x, float groundTop, int hp, boolean gravityBoss) {
         bounds.set(x, groundTop, 28, 32);
         this.groundTop = groundTop;
         this.hp = this.maxHp = hp;
+        this.gravityBoss = gravityBoss;
+        this.seq = gravityBoss ? GSEQ : NSEQ;
     }
 
     boolean enraged() { return hp <= maxHp / 2; }
@@ -449,6 +460,7 @@ class Boss extends Entity {
     void update(float dt, Player p, Array<EBullet> eb, float left, float right) {
         if (!alive) return;
         slamLanded = false;
+        flipStarted = false;
         float mul = enraged() ? 1.5f : 1f;
 
         boolean wasAir = !onGround;
@@ -496,6 +508,34 @@ class Boss extends Entity {
                 }
                 if (timer <= 0 && onGround) endMove(mul);
                 break;
+            case GFLIP:
+                // 重力反转：把玩家拉向天花板，期间持续扇形弹幕
+                vel.x = 0;
+                subT -= dt;
+                if (subT <= 0) { fan(eb, p, mul); subT = 0.6f; }
+                if (timer <= 0) { p.gravitySign = 1f; endMove(mul); }
+                break;
+            case WELL: {
+                // 引力井：把玩家朝 Boss 方向拉拽，并发射瞄准弹
+                vel.x = 0;
+                float dx = cx() - p.cx(), dy = cy() - p.cy();
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len < 0.001f) len = 1f;
+                float pull = 260f * mul;
+                p.vel.x += dx / len * pull * dt;
+                p.vel.y += dy / len * pull * dt;
+                subT -= dt;
+                if (subT <= 0) { aimed(eb, p, mul); subT = 0.35f; }
+                if (timer <= 0) endMove(mul);
+                break;
+            }
+            case PYRAMID:
+                // 金字塔：多轮 8 方向环形弹幕
+                vel.x = 0;
+                subT -= dt;
+                if (shots > 0 && subT <= 0) { ring(eb, mul); shots--; subT = 0.5f; }
+                if (timer <= 0) endMove(mul);
+                break;
             default:
         }
 
@@ -505,8 +545,8 @@ class Boss extends Entity {
     }
 
     private void startNext(Player p, Array<EBullet> eb) {
-        state = SEQ[seqI];
-        seqI = (seqI + 1) % SEQ.length;
+        state = seq[seqI];
+        seqI = (seqI + 1) % seq.length;
         float mul = enraged() ? 1.5f : 1f;
         switch (state) {
             case APPROACH: timer = 1.0f / mul; break;
@@ -514,6 +554,9 @@ class Boss extends Entity {
             case VOLLEY:   shots = enraged() ? 5 : 3; subT = 0f; timer = 0.7f + shots * 0.18f; break;
             case DASH:     dashDir = p.cx() > cx() ? 1 : -1; timer = 0.45f; break;
             case SLAM:     didJump = false; waveDone = false; timer = 2.2f; break;
+            case GFLIP:    p.gravitySign = -1f; flipStarted = true; fan(eb, p, mul); subT = 0.6f; timer = enraged() ? 3.0f : 4.0f; break;
+            case WELL:     subT = 0f; timer = 2.2f; break;
+            case PYRAMID:  shots = enraged() ? 3 : 2; subT = 0f; timer = 0.5f + shots * 0.5f; break;
             default:       timer = 0.4f;
         }
     }
@@ -532,11 +575,21 @@ class Boss extends Entity {
     private void aimed(Array<EBullet> eb, Player p, float mul) {
         eb.add(new EBullet(cx() - 3, cy() - 3, p.cx() - cx(), p.cy() - cy(), K.EB_SPEED * 1.6f * mul));
     }
+
+    /** 金字塔环形弹幕：向 8 个方向同时发射。 */
+    private void ring(Array<EBullet> eb, float mul) {
+        int n = 8;
+        for (int i = 0; i < n; i++) {
+            float a = (float) (i * Math.PI * 2.0 / n);
+            eb.add(new EBullet(cx() - 3, cy() - 3, (float) Math.cos(a), (float) Math.sin(a), K.EB_SPEED * mul));
+        }
+    }
 }
 
 /* ===================== 玩家（含蓄力射击） ===================== */
 class Player extends Entity {
     int facing = 1;
+    float gravitySign = 1f;   // 1=正常向下，-1=重力反转（被拉向天花板）
     boolean onGround = false;
     private int jumpsLeft = K.P_MAX_JUMPS;
 
@@ -571,6 +624,7 @@ class Player extends Entity {
         invuln = 0; hurtLock = 0;
         jumpsLeft = K.P_MAX_JUMPS;
         facing = 1;
+        gravitySign = 1f;
     }
 
     void update(float dt, Level level, Array<Bullet> bullets) {
@@ -604,9 +658,10 @@ class Player extends Entity {
                 if (right) { move += 1; facing = 1; }
             }
             vel.x = move * K.P_MOVE;
-            if (!locked && jump && jumpsLeft > 0) { vel.y = K.P_JUMP; jumpsLeft--; onGround = false; jumped = true; }
-            vel.y += K.GRAVITY * dt;
-            if (vel.y < K.MAX_FALL) vel.y = K.MAX_FALL;
+            if (!locked && jump && jumpsLeft > 0) { vel.y = K.P_JUMP * gravitySign; jumpsLeft--; onGround = false; jumped = true; }
+            vel.y += K.GRAVITY * gravitySign * dt;
+            if (gravitySign > 0 && vel.y < K.MAX_FALL) vel.y = K.MAX_FALL;
+            if (gravitySign < 0 && vel.y > -K.MAX_FALL) vel.y = -K.MAX_FALL;
         }
 
         if (locked) {
@@ -660,11 +715,14 @@ class Player extends Entity {
         onGround = false;
         for (Rectangle s : level.solids) {
             if (s.overlaps(bounds)) {
-                if (vel.y <= 0) { bounds.y = s.y + s.height; onGround = true; }
-                else            { bounds.y = s.y - bounds.height; }
+                if (vel.y <= 0) { bounds.y = s.y + s.height; if (gravitySign > 0) onGround = true; }
+                else            { bounds.y = s.y - bounds.height; if (gravitySign < 0) onGround = true; }
                 vel.y = 0;
             }
         }
+        // 世界上下边界（重力反转时以天花板为落脚点）
+        if (bounds.y < 0) { bounds.y = 0; vel.y = 0; if (gravitySign > 0) onGround = true; }
+        if (bounds.y + bounds.height > K.VH) { bounds.y = K.VH - bounds.height; vel.y = 0; if (gravitySign < 0) onGround = true; }
     }
 
     void damage(int dmg, int knockDir) {
@@ -726,7 +784,7 @@ class Level {
         width = K.VW;
         solid(0, 0, width, 24);
         solid(50, 80, 80, 14); solid(width - 130, 80, 80, 14);
-        boss = new Boss(width / 2f - 14, 24, 60);
+        boss = new Boss(width / 2f - 14, 24, 70, true); // 重力蚂蚁 Gravity Antonion
         spawnX = 30; spawnY = 30;
     }
 
@@ -854,6 +912,7 @@ class GameScreen extends ScreenAdapter {
         if (level.boss != null && level.boss.alive) {
             level.boss.update(dt, player, enemyBullets, 8, level.width - 8);
             if (level.boss.slamLanded) { addShake(5f, 0.3f); sfx.play(sfx.explode, 0.4f); }
+            if (level.boss.flipStarted) { addShake(4f, 0.3f); sfx.play(sfx.doorIn, 0.6f); }
         }
         if (enemyBullets.size > ebBefore) sfx.play(sfx.enemyShot, 0.3f);
 
@@ -873,6 +932,7 @@ class GameScreen extends ScreenAdapter {
                 sfx.play(sfx.hurt, 0.3f);
                 if (level.boss.hp <= 0) {
                     level.boss.alive = false;
+                    player.gravitySign = 1f;
                     sfx.play(sfx.explode, 0.8f);
                     addShake(7f, 0.5f);
                 }
@@ -1051,6 +1111,13 @@ class GameScreen extends ScreenAdapter {
             batch.draw(assets.pixel, bx, by, bw * r, 6);
             batch.setColor(Color.WHITE);
             assets.font.draw(batch, level.boss.enraged() ? "BOSS  (ENRAGED)" : "BOSS", bx, by + 16);
+        }
+
+        if (player.gravitySign < 0) {
+            assets.font.getData().setScale(0.6f);
+            layout.setText(assets.font, "!!  GRAVITY REVERSED  !!", Color.valueOf("9CFFEF"), K.VW, Align.center, false);
+            assets.font.draw(batch, layout, 0, K.VH - 40);
+            assets.font.getData().setScale(0.4f);
         }
     }
 
