@@ -23,8 +23,7 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 
 /**
  * 类洛克人 2D 横版动作游戏 —— 平台无关核心（core 模块）。
- * 由各平台启动器（桌面 lwjgl3 / 网页 teavm）实例化运行。
- * 音频与字体均通过 Gdx.files.internal 从 assets 加载（桌面与 Web 通用）。
+ * 含 8 个原创元素 Boss 与选关界面。音频/字体经 Gdx.files.internal 从 assets 加载。
  */
 public class CoreGame extends Game {
     @Override
@@ -109,16 +108,28 @@ class Sfx {
 
 /* ===================== 资源（程序化像素 + 外部覆盖） ===================== */
 class Assets {
-    Texture player, walker, shooter, flyer, boss, door, bullet, ebullet, tile, bgFar, bgNear, pixel;
+    Texture player, walker, shooter, flyer, door, bullet, ebullet, tile, bgFar, bgNear, pixel;
+    Texture[] bosses = new Texture[8];
     BitmapFont font;
     private final Array<Texture> managed = new Array<>();
+
+    // 8 个 Boss 的主题调色板：{主色, 暗色, 核心亮色}
+    private static final int[][] BOSS_PAL = {
+        {0x7A3AD0, 0x3A1A66, 0xC0A0FF}, // 0 重力 GRAVITON
+        {0xF0C020, 0x8A6A00, 0xFFFFC0}, // 1 光   PHOTON
+        {0x3A2A5A, 0x140A24, 0x8A6AC0}, // 2 暗   SHADE
+        {0xE0501A, 0x7A2000, 0xFFC060}, // 3 火   BLAZE
+        {0x3AA84B, 0x155A22, 0xB0FF80}, // 4 自然 THORN
+        {0x9A6A3A, 0x4A2A10, 0xE0C080}, // 5 岩   BOULDER
+        {0x5AC0E0, 0x1A5A7A, 0xD0F8FF}, // 6 冰   GLACIER
+        {0xE0D020, 0x2A3A8A, 0xFFFF80}, // 7 电   VOLT
+    };
 
     void load() {
         player  = ext("player.png")  ? file("player.png")  : makePlayer();
         walker  = ext("walker.png")  ? file("walker.png")  : makeWalker();
         shooter = ext("shooter.png") ? file("shooter.png") : makeShooter();
         flyer   = ext("flyer.png")   ? file("flyer.png")   : makeFlyer();
-        boss    = ext("boss.png")    ? file("boss.png")    : makeBoss();
         door    = ext("door.png")    ? file("door.png")    : makeDoor();
         bullet  = ext("bullet.png")  ? file("bullet.png")  : makeBullet();
         ebullet = ext("ebullet.png") ? file("ebullet.png") : makeEBullet();
@@ -126,6 +137,8 @@ class Assets {
         bgFar   = ext("bg.png")      ? file("bg.png")      : makeSky();
         bgNear  = makeHill();
         pixel   = makePixel();
+        for (int i = 0; i < 8; i++)
+            bosses[i] = ext("boss" + i + ".png") ? file("boss" + i + ".png") : makeBossTex(i);
 
         if (ext("ui/font.fnt")) font = new BitmapFont(Gdx.files.internal("ui/font.fnt"));
         else                    font = new BitmapFont();
@@ -211,17 +224,36 @@ class Assets {
         return tex(p);
     }
 
-    private Texture makeBoss() {
+    /** 8 个 Boss 的原创像素建模：统一机甲轮廓 + 各主题配色 + 专属造型细节。 */
+    private Texture makeBossTex(int t) {
+        int main = BOSS_PAL[t][0], dark = BOSS_PAL[t][1], core = BOSS_PAL[t][2];
         Pixmap p = pm(28, 32);
-        int red = 0xC81020, dark = 0x6A0810, bright = 0xFFC040, gray = 0x8A2030;
-        rect(p, 3, 24, 6, 8, dark);
-        rect(p, 19, 24, 6, 8, dark);
-        rect(p, 1, 8, 5, 6, gray);
-        rect(p, 22, 8, 5, 6, gray);
-        rect(p, 4, 8, 20, 16, red);
-        rect(p, 11, 12, 6, 6, bright);
-        rect(p, 10, 1, 8, 7, red);
-        rect(p, 11, 3, 6, 2, bright);
+        rect(p, 3, 24, 6, 8, dark);    // 左腿
+        rect(p, 19, 24, 6, 8, dark);   // 右腿
+        rect(p, 1, 8, 5, 6, dark);     // 左肩
+        rect(p, 22, 8, 5, 6, dark);    // 右肩
+        rect(p, 4, 8, 20, 16, main);   // 躯干
+        rect(p, 2, 9, 3, 2, core);     // 肩饰
+        rect(p, 23, 9, 3, 2, core);
+        rect(p, 10, 1, 8, 7, main);    // 头
+        rect(p, 11, 3, 6, 2, core);    // 眼
+
+        // 核心：偶数方核 / 奇数十字核
+        if (t % 2 == 0) rect(p, 11, 12, 6, 6, core);
+        else { rect(p, 13, 11, 2, 8, core); rect(p, 10, 14, 8, 2, core); }
+
+        // 头顶专属造型（按主题差异化）
+        switch (t) {
+            case 0: rect(p, 12, 0, 4, 1, core); break;                      // 重力：短平冠
+            case 1: rect(p, 13, 0, 2, 1, core); rect(p, 9, 4, 2, 2, core); rect(p, 17, 4, 2, 2, core); break; // 光：侧发光点
+            case 2: rect(p, 10, 0, 8, 1, dark); break;                      // 暗：暗檐
+            case 3: rect(p, 11, 0, 2, 2, core); rect(p, 15, 0, 2, 2, core); break; // 火：双火苗
+            case 4: rect(p, 13, 0, 2, 2, core); rect(p, 11, 1, 6, 1, core); break; // 自然：叶尖
+            case 5: rect(p, 9, 6, 10, 2, dark); break;                      // 岩：厚护额
+            case 6: rect(p, 12, 0, 1, 2, core); rect(p, 15, 0, 1, 2, core); break; // 冰：冰棱
+            case 7: rect(p, 13, 0, 1, 2, core); rect(p, 11, 2, 6, 1, core); break; // 电：尖角
+            default:
+        }
         return tex(p);
     }
 
@@ -423,36 +455,46 @@ class Enemy extends Entity {
     }
 }
 
-/* ===================== Boss（多招式状态机） ===================== */
+/* ===================== Boss（8 主题多招式状态机） ===================== */
 class Boss extends Entity {
+    // 招式常量
     static final int IDLE = 0, APPROACH = 1, FAN = 2, VOLLEY = 3, DASH = 4, SLAM = 5,
-            GFLIP = 6, WELL = 7, PYRAMID = 8;
-    private static final int[] NSEQ = {APPROACH, FAN, VOLLEY, DASH, SLAM};
-    // 重力蚂蚁(Gravity Antonion)招式序列：重力反转/引力井/金字塔环形弹/冲撞/扇形/下砸/连射
-    private static final int[] GSEQ = {GFLIP, WELL, PYRAMID, DASH, FAN, SLAM, VOLLEY};
+            GFLIP = 6, WELL = 7, PYRAMID = 8, LASER = 9, RAIN = 10, BURST = 11, TELEPORT = 12, GUARD = 13;
+
+    // 8 个 Boss 名称 / 血量 / 招式序列（主题灵感：重力/光/暗/火/自然/岩/冰/电）
+    static final String[] NAMES = {"GRAVITON", "PHOTON", "SHADE", "BLAZE", "THORN", "BOULDER", "GLACIER", "VOLT"};
+    static final int[] HP = {70, 64, 66, 72, 74, 80, 66, 64};
+    private static final int[][] SEQS = {
+        {GFLIP, WELL, PYRAMID, DASH, SLAM},        // 0 重力
+        {LASER, VOLLEY, DASH, BURST, FAN},         // 1 光：高速激光
+        {TELEPORT, VOLLEY, FAN, TELEPORT, BURST},  // 2 暗：瞬移
+        {RAIN, DASH, FAN, SLAM, BURST},            // 3 火：火雨
+        {GUARD, APPROACH, VOLLEY, DASH, FAN},      // 4 自然：防御反击
+        {RAIN, SLAM, APPROACH, BURST, SLAM},       // 5 岩：落石震地
+        {FAN, DASH, VOLLEY, BURST, LASER},         // 6 冰：冰锥散射
+        {LASER, DASH, BURST, VOLLEY, LASER},       // 7 电：连续闪电
+    };
 
     int hp, maxHp;
+    int bossType;
     float groundTop;
     boolean onGround;
 
-    final boolean gravityBoss;
     private final int[] seq;
-
     private int state = IDLE, seqI = 0, shots = 0;
     private float timer = 0.8f, subT = 0f;
     private int dashDir = -1;
     private boolean didJump = false, waveDone = false;
     boolean slamLanded = false;
     boolean flipStarted = false;
+    boolean guarding = false;
 
-    Boss(float x, float groundTop, int hp) { this(x, groundTop, hp, false); }
-
-    Boss(float x, float groundTop, int hp, boolean gravityBoss) {
+    Boss(float x, float groundTop, int hp, int type) {
         bounds.set(x, groundTop, 28, 32);
         this.groundTop = groundTop;
         this.hp = this.maxHp = hp;
-        this.gravityBoss = gravityBoss;
-        this.seq = gravityBoss ? GSEQ : NSEQ;
+        this.bossType = type;
+        this.seq = SEQS[type];
     }
 
     boolean enraged() { return hp <= maxHp / 2; }
@@ -473,7 +515,7 @@ class Boss extends Entity {
         switch (state) {
             case IDLE:
                 vel.x = 0;
-                if (timer <= 0) startNext(p, eb);
+                if (timer <= 0) startNext(p, eb, left, right);
                 break;
             case APPROACH:
                 vel.x = (p.cx() > cx() ? 1 : -1) * K.BOSS_SPEED * mul;
@@ -509,14 +551,14 @@ class Boss extends Entity {
                 if (timer <= 0 && onGround) endMove(mul);
                 break;
             case GFLIP:
-                // 重力反转：把玩家拉向天花板，期间持续扇形弹幕
+                // 重力反转：拉玩家至天花板，期间持续扇形弹幕
                 vel.x = 0;
                 subT -= dt;
                 if (subT <= 0) { fan(eb, p, mul); subT = 0.6f; }
                 if (timer <= 0) { p.gravitySign = 1f; endMove(mul); }
                 break;
             case WELL: {
-                // 引力井：把玩家朝 Boss 方向拉拽，并发射瞄准弹
+                // 引力井：把玩家往 Boss 拽 + 瞄准弹
                 vel.x = 0;
                 float dx = cx() - p.cx(), dy = cy() - p.cy();
                 float len = (float) Math.sqrt(dx * dx + dy * dy);
@@ -530,11 +572,50 @@ class Boss extends Entity {
                 break;
             }
             case PYRAMID:
-                // 金字塔：多轮 8 方向环形弹幕
+                // 金字塔：多轮 8 方向环形弹
                 vel.x = 0;
                 subT -= dt;
                 if (shots > 0 && subT <= 0) { ring(eb, mul); shots--; subT = 0.5f; }
                 if (timer <= 0) endMove(mul);
+                break;
+            case LASER:
+                // 激光：连续高速水平弹（光/电）
+                vel.x = 0;
+                subT -= dt;
+                if (shots > 0 && subT <= 0) {
+                    int d = p.cx() > cx() ? 1 : -1;
+                    eb.add(new EBullet(cx() - 3, cy() - 3, d, 0, K.EB_SPEED * 2.3f));
+                    shots--; subT = 0.14f;
+                }
+                if (timer <= 0) endMove(mul);
+                break;
+            case RAIN:
+                // 火雨/落石：从上方落下弹（火/岩）
+                vel.x = 0;
+                subT -= dt;
+                if (shots > 0 && subT <= 0) {
+                    float rx = p.cx() + (float) (Math.random() * 90 - 45);
+                    eb.add(new EBullet(rx, K.VH - 6, 0, -1, K.EB_SPEED * 1.15f));
+                    shots--; subT = 0.18f;
+                }
+                if (timer <= 0) endMove(mul);
+                break;
+            case BURST:
+                // 爆发：多轮环形弹幕
+                vel.x = 0;
+                subT -= dt;
+                if (shots > 0 && subT <= 0) { ring(eb, mul); shots--; subT = 0.4f; }
+                if (timer <= 0) endMove(mul);
+                break;
+            case TELEPORT:
+                // 瞬移（暗）：进入时已移动，短暂停顿
+                vel.x = 0;
+                if (timer <= 0) endMove(mul);
+                break;
+            case GUARD:
+                // 防御（自然）：期间减伤
+                vel.x = 0;
+                if (timer <= 0) { guarding = false; endMove(mul); }
                 break;
             default:
         }
@@ -544,7 +625,7 @@ class Boss extends Entity {
         if (bounds.x + bounds.width > right) { bounds.x = right - bounds.width; if (state == DASH || state == APPROACH) dashDir = -1; }
     }
 
-    private void startNext(Player p, Array<EBullet> eb) {
+    private void startNext(Player p, Array<EBullet> eb, float left, float right) {
         state = seq[seqI];
         seqI = (seqI + 1) % seq.length;
         float mul = enraged() ? 1.5f : 1f;
@@ -557,6 +638,18 @@ class Boss extends Entity {
             case GFLIP:    p.gravitySign = -1f; flipStarted = true; fan(eb, p, mul); subT = 0.6f; timer = enraged() ? 3.0f : 4.0f; break;
             case WELL:     subT = 0f; timer = 2.2f; break;
             case PYRAMID:  shots = enraged() ? 3 : 2; subT = 0f; timer = 0.5f + shots * 0.5f; break;
+            case LASER:    shots = enraged() ? 7 : 5; subT = 0f; timer = 0.3f + shots * 0.14f; break;
+            case RAIN:     shots = enraged() ? 9 : 6; subT = 0f; timer = 0.3f + shots * 0.18f; break;
+            case BURST:    shots = enraged() ? 4 : 2; subT = 0f; timer = 0.3f + shots * 0.4f; break;
+            case TELEPORT: {
+                float nx = (p.cx() > cx()) ? p.cx() + 50 : p.cx() - 50 - bounds.width;
+                if (nx < left) nx = left;
+                if (nx + bounds.width > right) nx = right - bounds.width;
+                bounds.x = nx; bounds.y = groundTop; vel.set(0, 0);
+                fan(eb, p, mul); timer = 0.5f;
+                break;
+            }
+            case GUARD:    guarding = true; timer = 1.5f; break;
             default:       timer = 0.4f;
         }
     }
@@ -576,7 +669,6 @@ class Boss extends Entity {
         eb.add(new EBullet(cx() - 3, cy() - 3, p.cx() - cx(), p.cy() - cy(), K.EB_SPEED * 1.6f * mul));
     }
 
-    /** 金字塔环形弹幕：向 8 个方向同时发射。 */
     private void ring(Array<EBullet> eb, float mul) {
         int n = 8;
         for (int i = 0; i < n; i++) {
@@ -586,7 +678,7 @@ class Boss extends Entity {
     }
 }
 
-/* ===================== 玩家（含蓄力射击） ===================== */
+/* ===================== 玩家（含蓄力射击 + 重力反转） ===================== */
 class Player extends Entity {
     int facing = 1;
     float gravitySign = 1f;   // 1=正常向下，-1=重力反转（被拉向天花板）
@@ -738,7 +830,7 @@ class Player extends Entity {
     private static boolean keyJust(int a, int b) { return Gdx.input.isKeyJustPressed(a) || Gdx.input.isKeyJustPressed(b); }
 }
 
-/* ===================== 关卡（含进入门） ===================== */
+/* ===================== 关卡（8 关：小兵关 + 对应 Boss） ===================== */
 class Level {
     static final int MINION = 0, BOSS = 1;
 
@@ -749,23 +841,24 @@ class Level {
     int type;
     float width, height, spawnX, spawnY;
 
-    static Level build(int levelIndex, int phase) {
+    static Level build(int stage, int phase) {
         Level L = new Level();
         L.height = K.VH;
         if (phase == MINION) {
             L.type = MINION;
-            if (levelIndex == 0) L.buildMinion1(); else L.buildMinion2();
+            if (stage % 2 == 0) L.buildMinionA(); else L.buildMinionB();
             L.door = new Rectangle(L.width - 40, 24, 24, 48);
         } else {
             L.type = BOSS;
-            if (levelIndex == 0) L.buildBoss1(); else L.buildBoss2();
+            L.buildBossArena();
+            L.boss = new Boss(L.width / 2f - 14, 24, Boss.HP[stage], stage);
         }
         return L;
     }
 
     private void solid(float x, float y, float w, float h) { solids.add(new Rectangle(x, y, w, h)); }
 
-    private void buildMinion1() {
+    private void buildMinionA() {
         width = 1500f;
         solid(0, 0, width, 24);
         solid(180, 60, 90, 16); solid(320, 100, 80, 16); solid(470, 70, 70, 16);
@@ -780,15 +873,7 @@ class Level {
         spawnX = 40; spawnY = 40;
     }
 
-    private void buildBoss1() {
-        width = K.VW;
-        solid(0, 0, width, 24);
-        solid(50, 80, 80, 14); solid(width - 130, 80, 80, 14);
-        boss = new Boss(width / 2f - 14, 24, 70, true); // 重力蚂蚁 Gravity Antonion
-        spawnX = 30; spawnY = 30;
-    }
-
-    private void buildMinion2() {
+    private void buildMinionB() {
         width = 1700f;
         solid(0, 0, width, 24);
         solid(160, 80, 70, 16); solid(300, 120, 70, 16); solid(440, 70, 70, 16);
@@ -807,20 +892,19 @@ class Level {
         spawnX = 40; spawnY = 40;
     }
 
-    private void buildBoss2() {
+    private void buildBossArena() {
         width = K.VW;
         solid(0, 0, width, 24);
-        solid(40, 70, 70, 14); solid(width / 2f - 35, 130, 70, 14); solid(width - 110, 70, 70, 14);
-        boss = new Boss(width / 2f - 14, 24, 90);
+        solid(40, 74, 70, 14);
+        solid(width - 110, 74, 70, 14);
+        solid(width / 2f - 35, 132, 70, 14);
         spawnX = 30; spawnY = 30;
     }
 }
 
-/* ===================== 游戏屏幕 ===================== */
+/* ===================== 游戏屏幕（选关 + 8 关流程） ===================== */
 class GameScreen extends ScreenAdapter {
-    private enum State { PLAYING, TRANSITION, GAMEOVER, WIN }
-
-    private static final int LAST_LEVEL = 1;
+    private enum State { SELECT, PLAYING, TRANSITION, GAMEOVER, WIN }
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final OrthographicCamera hudCam = new OrthographicCamera();
@@ -835,8 +919,10 @@ class GameScreen extends ScreenAdapter {
     private final Array<Bullet> playerBullets = new Array<>();
     private final Array<EBullet> enemyBullets = new Array<>();
 
-    private State state = State.PLAYING;
-    private int levelIndex = 0, phase = 0, lives = K.P_LIVES;
+    private State state = State.SELECT;
+    private int currentStage = 0, phase = 0, lives = K.P_LIVES;
+    private final boolean[] cleared = new boolean[8];
+    private int cursor = 0;
     private float transT = 0f;
     private String banner = "";
     private float shakeT = 0f, shakeMag = 0f;
@@ -858,17 +944,22 @@ class GameScreen extends ScreenAdapter {
         if (ae != null) { try { autoExit = Float.parseFloat(ae); } catch (NumberFormatException ignored) {} }
 
         lives = K.P_LIVES;
-        goTo(0, 0, "LEVEL 1-1");
+        state = State.SELECT;
     }
 
-    private void goTo(int lvl, int ph, String text) {
-        levelIndex = lvl; phase = ph;
-        level = Level.build(lvl, ph);
+    private void goToPhase(int ph, String text) {
+        phase = ph;
+        level = Level.build(currentStage, ph);
         player.resetForPhase(level.spawnX, level.spawnY);
         playerBullets.clear();
         enemyBullets.clear();
         snapCamera();
         banner = text; transT = 1.3f; state = State.TRANSITION;
+    }
+
+    private void goToStage(int idx) {
+        currentStage = idx;
+        goToPhase(Level.MINION, "STAGE " + (idx + 1) + "\n" + Boss.NAMES[idx]);
     }
 
     private void addShake(float mag, float t) { shakeMag = mag; shakeT = t; }
@@ -878,19 +969,37 @@ class GameScreen extends ScreenAdapter {
     @Override
     public void render(float delta) { update(delta); draw(); }
 
+    private boolean kj(int k) { return Gdx.input.isKeyJustPressed(k); }
+
     private void update(float dt) {
         if (dt > 0.05f) dt = 0.05f;
         elapsed += dt;
         if (autoExit > 0 && elapsed >= autoExit) { Gdx.app.exit(); return; }
 
         switch (state) {
+            case SELECT:     updateSelect(); break;
             case PLAYING:    updatePlaying(dt); break;
             case TRANSITION: transT -= dt; if (transT <= 0) state = State.PLAYING; break;
             case GAMEOVER:
+                if (kj(Keys.R)) { lives = K.P_LIVES; state = State.SELECT; }
+                break;
             case WIN:
-                if (Gdx.input.isKeyJustPressed(Keys.R)) { lives = K.P_LIVES; goTo(0, 0, "LEVEL 1-1"); }
+                if (kj(Keys.R)) { lives = K.P_LIVES; for (int i = 0; i < 8; i++) cleared[i] = false; cursor = 0; state = State.SELECT; }
                 break;
             default:
+        }
+    }
+
+    private void updateSelect() {
+        int col = cursor % 4, row = cursor / 4;
+        if (kj(Keys.LEFT) || kj(Keys.A))  col = (col + 3) % 4;
+        if (kj(Keys.RIGHT) || kj(Keys.D)) col = (col + 1) % 4;
+        if (kj(Keys.UP) || kj(Keys.W))    row = 0;
+        if (kj(Keys.DOWN) || kj(Keys.S))  row = 1;
+        cursor = row * 4 + col;
+        if (kj(Keys.J) || kj(Keys.ENTER) || kj(Keys.SPACE)) {
+            sfx.play(sfx.doorIn, 0.6f);
+            goToStage(cursor);
         }
     }
 
@@ -927,7 +1036,8 @@ class GameScreen extends ScreenAdapter {
                 }
             }
             if (b.alive && level.boss != null && level.boss.alive && level.boss.bounds.overlaps(b.bounds)) {
-                level.boss.hp -= b.dmgBoss;
+                int dmg = level.boss.guarding ? Math.max(1, b.dmgBoss / 3) : b.dmgBoss;
+                level.boss.hp -= dmg;
                 b.alive = false;
                 sfx.play(sfx.hurt, 0.3f);
                 if (level.boss.hp <= 0) {
@@ -975,20 +1085,23 @@ class GameScreen extends ScreenAdapter {
 
     private void onPlayerDeath() {
         addShake(6f, 0.4f);
+        player.gravitySign = 1f;
         lives--;
         if (lives < 0) state = State.GAMEOVER;
-        else goTo(levelIndex, phase, "LIFE LOST  -  " + lives + " LEFT");
+        else goToPhase(phase, "LIFE LOST  -  " + lives + " LEFT");
     }
 
     private void clearMinion() {
         sfx.play(sfx.doorIn, 0.6f);
-        goTo(levelIndex, Level.BOSS, "WARNING !!  BOSS");
+        goToPhase(Level.BOSS, "WARNING !!\n" + Boss.NAMES[currentStage]);
     }
 
     private void clearBoss() {
         sfx.play(sfx.clear, 0.7f);
-        if (levelIndex >= LAST_LEVEL) state = State.WIN;
-        else goTo(levelIndex + 1, Level.MINION, "STAGE CLEAR  ->  LEVEL " + (levelIndex + 2) + "-1");
+        cleared[currentStage] = true;
+        boolean all = true;
+        for (boolean c : cleared) if (!c) all = false;
+        state = all ? State.WIN : State.SELECT;
     }
 
     private void removeDead(Array<Bullet> a) { for (int i = a.size - 1; i >= 0; i--) if (!a.get(i).alive) a.removeIndex(i); }
@@ -1015,8 +1128,11 @@ class GameScreen extends ScreenAdapter {
         camera.update();
     }
 
+    /* ===================== 渲染 ===================== */
     private void draw() {
         ScreenUtils.clear(0.06f, 0.06f, 0.1f, 1f);
+
+        if (state == State.SELECT) { drawSelect(); return; }
 
         batch.setProjectionMatrix(hudCam.combined);
         batch.begin();
@@ -1030,8 +1146,11 @@ class GameScreen extends ScreenAdapter {
         drawDoor();
         for (Enemy e : level.enemies)
             if (e.alive) batch.draw(e.tex(assets), e.bounds.x, e.bounds.y, e.bounds.width, e.bounds.height);
-        if (level.boss != null && level.boss.alive)
-            batch.draw(assets.boss, level.boss.bounds.x, level.boss.bounds.y, level.boss.bounds.width, level.boss.bounds.height);
+        if (level.boss != null && level.boss.alive) {
+            if (level.boss.guarding) batch.setColor(0.7f, 0.9f, 1f, 1f);
+            batch.draw(assets.bosses[level.boss.bossType], level.boss.bounds.x, level.boss.bounds.y, level.boss.bounds.width, level.boss.bounds.height);
+            batch.setColor(Color.WHITE);
+        }
         for (EBullet e : enemyBullets) batch.draw(assets.ebullet, e.bounds.x, e.bounds.y, e.bounds.width, e.bounds.height);
         for (Bullet b : playerBullets) { b.tint(batch); batch.draw(assets.bullet, b.bounds.x, b.bounds.y, b.bounds.width, b.bounds.height); }
         batch.setColor(Color.WHITE);
@@ -1043,7 +1162,47 @@ class GameScreen extends ScreenAdapter {
         drawHud();
         if (state == State.TRANSITION) drawCenterBanner(banner, 0.55f);
         if (state == State.GAMEOVER)   drawCenterBanner("GAME OVER\nPRESS R", 0.7f);
-        if (state == State.WIN)        drawCenterBanner("ALL CLEAR !\nPRESS R", 0.7f);
+        if (state == State.WIN)        drawCenterBanner("ALL 8 CLEAR !\nPRESS R", 0.7f);
+        batch.end();
+    }
+
+    private void drawSelect() {
+        batch.setProjectionMatrix(hudCam.combined);
+        batch.begin();
+        batch.setColor(Color.WHITE);
+        batch.draw(assets.bgFar, 0, 0, K.VW, K.VH);
+
+        assets.font.getData().setScale(0.8f);
+        layout.setText(assets.font, "STAGE SELECT", Color.WHITE, K.VW, Align.center, false);
+        assets.font.draw(batch, layout, 0, K.VH - 14);
+        assets.font.getData().setScale(0.4f);
+
+        float[] colX = {40, 150, 260, 370};
+        float[] rowY = {150, 74};
+        float iw = 48, ih = 52;
+        for (int i = 0; i < 8; i++) {
+            float ix = colX[i % 4], iy = rowY[i / 4];
+            if (i == cursor) {
+                float a = 0.5f + 0.5f * (float) Math.sin(elapsed * 8);
+                batch.setColor(1f, 1f, 0.3f, 0.9f * a);
+                batch.draw(assets.pixel, ix - 3, iy - 3, iw + 6, ih + 6);
+            }
+            batch.setColor(0.10f, 0.10f, 0.16f, 1f);
+            batch.draw(assets.pixel, ix - 1, iy - 1, iw + 2, ih + 2);
+            batch.setColor(Color.WHITE);
+            batch.draw(assets.bosses[i], ix, iy, iw, ih);
+
+            layout.setText(assets.font, Boss.NAMES[i], Color.WHITE, iw, Align.center, false);
+            assets.font.draw(batch, layout, ix, iy - 4);
+
+            if (cleared[i]) {
+                batch.setColor(0.2f, 1f, 0.4f, 1f);
+                batch.draw(assets.pixel, ix + iw - 9, iy + ih - 9, 8, 8);
+                batch.setColor(Color.WHITE);
+            }
+        }
+        layout.setText(assets.font, "ARROWS: MOVE     J / ENTER: FIGHT", Color.WHITE, K.VW, Align.center, false);
+        assets.font.draw(batch, layout, 0, 26);
         batch.end();
     }
 
@@ -1098,9 +1257,10 @@ class GameScreen extends ScreenAdapter {
 
         assets.font.draw(batch, "HP", x, y + 18);
         assets.font.draw(batch, "LIVES: " + lives, x, y - 6);
-        String stage = "STAGE " + (levelIndex + 1) + "-" + (phase + 1) + (phase == Level.BOSS ? " (BOSS)" : " (MINIONS)");
-        assets.font.draw(batch, stage, x + 86, y - 6);
-        assets.font.draw(batch, "A/D move  SPACE/K jump x2  L dash  HOLD J charge shot", x, 14);
+        String st = "STAGE " + (currentStage + 1) + "  " + Boss.NAMES[currentStage]
+                + (phase == Level.BOSS ? " (BOSS)" : " (MINIONS)");
+        assets.font.draw(batch, st, x + 86, y - 6);
+        assets.font.draw(batch, "A/D move  SPACE/K jump x2  L dash  HOLD J charge", x, 14);
 
         if (level.boss != null && level.boss.alive) {
             float bw = 160f, bx = (K.VW - bw) / 2f, by = K.VH - 18;
@@ -1110,7 +1270,7 @@ class GameScreen extends ScreenAdapter {
             batch.setColor(level.boss.enraged() ? 1f : 0.9f, 0.3f, 0.3f, 1f);
             batch.draw(assets.pixel, bx, by, bw * r, 6);
             batch.setColor(Color.WHITE);
-            assets.font.draw(batch, level.boss.enraged() ? "BOSS  (ENRAGED)" : "BOSS", bx, by + 16);
+            assets.font.draw(batch, Boss.NAMES[level.boss.bossType] + (level.boss.enraged() ? "  (ENRAGED)" : ""), bx, by + 16);
         }
 
         if (player.gravitySign < 0) {
